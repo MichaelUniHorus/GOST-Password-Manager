@@ -444,6 +444,190 @@ def get_audit_logs():
     return jsonify({'logs': result})
 
 
+@app.route('/api/change-master-password', methods=['POST'])
+@require_auth
+def change_master_password():
+    """Смена мастер-пароля без пересоздания БД"""
+    from models import MasterEncryptionKey
+    
+    data = request.get_json()
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+    
+    if not current_password or not new_password:
+        return jsonify({'error': 'Укажите текущий и новый пароль'}), 400
+    
+    # Проверка стойкости нового пароля
+    is_valid, message = crypto.validate_password_strength(new_password)
+    if not is_valid:
+        return jsonify({'error': message}), 400
+    
+    db_session = db.get_session()
+    
+    try:
+        # Проверка текущего мастер-пароля
+        master = db_session.query(MasterPassword).first()
+        if not master or not crypto.verify_master_password(current_password, master.password_hash):
+            log_audit('change_master_password', success=False, details='Invalid current password')
+            return jsonify({'error': 'Неверный текущий пароль'}), 401
+        
+        # Получить MEK
+        mek_record = db_session.query(MasterEncryptionKey).first()
+        
+        if not mek_record:
+            # Миграция: если MEK еще нет, создаем его из текущего ключа
+            old_salt = base64.b64decode(master.salt)
+            old_key = crypto.derive_key_pbkdf2_gost(current_password, old_salt)
+            
+            # Генерируем новый MEK и шифруем текущим паролем
+            mek = old_key  # Используем текущий ключ как MEK
+            new_salt = crypto.generate_salt()
+            encrypted_mek = crypto.encrypt_mek(mek, current_password, new_salt)
+            
+            mek_record = MasterEncryptionKey(
+                encrypted_key=base64.b64encode(encrypted_mek).decode('utf-8'),
+                kdf_salt=base64.b64encode(new_salt).decode('utf-8'),
+                kdf_iterations=100000
+            )
+            db_session.add(mek_record)
+            db_session.commit()
+        
+        # Расшифровать MEK текущим паролем
+        old_salt = base64.b64decode(mek_record.kdf_salt)
+        encrypted_mek = base64.b64decode(mek_record.encrypted_key)
+        mek = crypto.decrypt_mek(encrypted_mek, current_password, old_salt)
+        
+        # Зашифровать MEK новым паролем
+        new_salt = crypto.generate_salt()
+        new_encrypted_mek = crypto.encrypt_mek(mek, new_password, new_salt)
+        
+        # Обновить MEK в БД
+        mek_record.encrypted_key = base64.b64encode(new_encrypted_mek).decode('utf-8')
+        mek_record.kdf_salt = base64.b64encode(new_salt).decode('utf-8')
+        mek_record.updated_at = datetime.utcnow()
+        
+        # Обновить хэш мастер-пароля
+        master.password_hash = crypto.hash_master_password(new_password)
+        master.salt = base64.b64encode(new_salt).decode('utf-8')
+        master.updated_at = datetime.utcnow()
+        
+        db_session.commit()
+        
+        # Обновить ключ в сессии
+        session['encryption_key'] = base64.b64encode(mek).decode('utf-8')
+        
+        log_audit('change_master_password', success=True)
+        
+        return jsonify({'success': True, 'message': 'Мастер-пароль успешно изменен'})
+    
+    except Exception as e:
+        db_session.rollback()
+        log_audit('change_master_password', success=False, details=str(e))
+        return jsonify({'error': f'Ошибка смены пароля: {str(e)}'}), 500
+    
+    finally:
+        db_session.close()
+
+
+@app.route('/api/backup-settings', methods=['GET'])
+@require_auth
+def get_backup_settings():
+    """Получение настроек автобэкапов"""
+    from models import BackupSettings
+    
+    db_session = db.get_session()
+    settings = db_session.query(BackupSettings).first()
+    
+    if not settings:
+        settings = BackupSettings()
+        db_session.add(settings)
+        db_session.commit()
+    
+    result = {
+        'enabled': settings.enabled,
+        'frequency': settings.frequency,
+        'keep_count': settings.keep_count,
+        'last_backup': settings.last_backup.isoformat() if settings.last_backup else None,
+        'backup_path': settings.backup_path
+    }
+    
+    db_session.close()
+    return jsonify(result)
+
+
+@app.route('/api/backup-settings', methods=['PUT'])
+@require_auth
+def update_backup_settings():
+    """Обновление настроек автобэкапов"""
+    from models import BackupSettings
+    
+    data = request.get_json()
+    
+    db_session = db.get_session()
+    settings = db_session.query(BackupSettings).first()
+    
+    if not settings:
+        settings = BackupSettings()
+        db_session.add(settings)
+    
+    if 'enabled' in data:
+        settings.enabled = data['enabled']
+    if 'frequency' in data:
+        settings.frequency = data['frequency']
+    if 'keep_count' in data:
+        settings.keep_count = data['keep_count']
+    if 'backup_path' in data:
+        settings.backup_path = data['backup_path']
+    
+    db_session.commit()
+    db_session.close()
+    
+    log_audit('update_backup_settings', success=True)
+    
+    return jsonify({'success': True, 'message': 'Настройки обновлены'})
+
+
+@app.route('/api/backup', methods=['POST'])
+@require_auth
+def create_backup_now():
+    """Создание резервной копии вручную"""
+    from models import BackupSettings
+    import shutil
+    from datetime import datetime
+    
+    try:
+        db_session = db.get_session()
+        settings = db_session.query(BackupSettings).first()
+        
+        if not settings:
+            settings = BackupSettings()
+            db_session.add(settings)
+            db_session.commit()
+        
+        backup_dir = settings.backup_path
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Создать имя файла с временной меткой
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        backup_file = os.path.join(backup_dir, f'password_manager_backup_{timestamp}.db')
+        
+        # Копировать БД
+        shutil.copy2(db.db_path, backup_file)
+        
+        # Обновить время последнего бэкапа
+        settings.last_backup = datetime.utcnow()
+        db_session.commit()
+        db_session.close()
+        
+        log_audit('manual_backup', success=True, details=f'Backup created: {backup_file}')
+        
+        return jsonify({'success': True, 'message': 'Резервная копия создана', 'file': backup_file})
+    
+    except Exception as e:
+        log_audit('manual_backup', success=False, details=str(e))
+        return jsonify({'error': f'Ошибка создания копии: {str(e)}'}), 500
+
+
 if __name__ == '__main__':
     # Инициализация БД
     db.init_db()

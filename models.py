@@ -27,6 +27,25 @@ class MasterPassword(Base):
         return f"<MasterPassword(id={self.id})>"
 
 
+class MasterEncryptionKey(Base):
+    """
+    Таблица для хранения главного ключа шифрования (MEK)
+    MEK шифрует все данные, сам MEK зашифрован ключом из мастер-пароля
+    Это позволяет менять мастер-пароль без перешифровки всех записей
+    """
+    __tablename__ = 'master_encryption_key'
+    
+    id = Column(Integer, primary_key=True)
+    encrypted_key = Column(String(512), nullable=False)  # Base64 encoded зашифрованный MEK
+    kdf_salt = Column(String(255), nullable=False)  # Соль для KDF
+    kdf_iterations = Column(Integer, nullable=False, default=100000)  # Итерации PBKDF2
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<MasterEncryptionKey(id={self.id})>"
+
+
 class PasswordEntry(Base):
     """
     Таблица для хранения записей паролей
@@ -105,6 +124,23 @@ class SessionToken(Base):
     
     def __repr__(self):
         return f"<SessionToken(id={self.id}, expires={self.expires_at})>"
+
+
+class BackupSettings(Base):
+    """
+    Таблица для настроек автоматического резервного копирования
+    """
+    __tablename__ = 'backup_settings'
+    
+    id = Column(Integer, primary_key=True)
+    enabled = Column(Boolean, default=False)
+    frequency = Column(String(20), default='daily')  # daily, weekly, monthly
+    keep_count = Column(Integer, default=10)  # Количество копий для хранения
+    last_backup = Column(DateTime)
+    backup_path = Column(String(512), default='backups')
+    
+    def __repr__(self):
+        return f"<BackupSettings(enabled={self.enabled}, frequency={self.frequency})>"
 
 
 class Database:

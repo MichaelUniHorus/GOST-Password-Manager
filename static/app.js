@@ -521,3 +521,231 @@ function resetInactivityTimer() {
 document.addEventListener('mousemove', resetInactivityTimer);
 document.addEventListener('keypress', resetInactivityTimer);
 resetInactivityTimer();
+
+// ========== Смена мастер-пароля ==========
+
+function openChangePasswordModal() {
+    document.getElementById('change-password-modal').classList.remove('hidden');
+    document.getElementById('current-master-password').value = '';
+    document.getElementById('new-master-password').value = '';
+    document.getElementById('confirm-master-password').value = '';
+    document.getElementById('change-password-error').textContent = '';
+}
+
+function closeChangePasswordModal() {
+    document.getElementById('change-password-modal').classList.add('hidden');
+}
+
+async function submitChangeMasterPassword() {
+    const currentPassword = document.getElementById('current-master-password').value;
+    const newPassword = document.getElementById('new-master-password').value;
+    const confirmPassword = document.getElementById('confirm-master-password').value;
+    const errorDiv = document.getElementById('change-password-error');
+    
+    errorDiv.textContent = '';
+    
+    // Валидация
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        errorDiv.textContent = 'Заполните все поля';
+        return;
+    }
+    
+    if (newPassword.length < 15) {
+        errorDiv.textContent = 'Новый пароль должен содержать минимум 15 символов';
+        return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+        errorDiv.textContent = 'Новый пароль и подтверждение не совпадают';
+        return;
+    }
+    
+    if (currentPassword === newPassword) {
+        errorDiv.textContent = 'Новый пароль должен отличаться от текущего';
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/change-master-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                current_password: currentPassword,
+                new_password: newPassword
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            alert('✅ Мастер-пароль успешно изменен!\n\nВы будете перенаправлены на страницу входа.');
+            closeChangePasswordModal();
+            closeSettingsModal();
+            logout();
+        } else {
+            errorDiv.textContent = data.error || 'Ошибка смены пароля';
+        }
+    } catch (error) {
+        errorDiv.textContent = 'Ошибка соединения с сервером';
+        console.error('Error changing password:', error);
+    }
+}
+
+// Проверка стойкости нового пароля
+document.getElementById('new-master-password')?.addEventListener('input', (e) => {
+    const password = e.target.value;
+    const strengthDiv = document.getElementById('new-password-strength');
+    
+    if (password.length === 0) {
+        strengthDiv.textContent = '';
+        return;
+    }
+    
+    let strength = 0;
+    let feedback = [];
+    
+    if (password.length >= 15) strength++;
+    if (password.length >= 20) strength++;
+    if (/[a-z]/.test(password)) strength++;
+    if (/[A-Z]/.test(password)) strength++;
+    if (/[0-9]/.test(password)) strength++;
+    if (/[^a-zA-Z0-9]/.test(password)) strength++;
+    
+    if (password.length < 15) {
+        feedback.push('Минимум 15 символов');
+    }
+    if (!/[a-z]/.test(password)) {
+        feedback.push('Добавьте строчные буквы');
+    }
+    if (!/[A-Z]/.test(password)) {
+        feedback.push('Добавьте заглавные буквы');
+    }
+    if (!/[0-9]/.test(password)) {
+        feedback.push('Добавьте цифры');
+    }
+    if (!/[^a-zA-Z0-9]/.test(password)) {
+        feedback.push('Добавьте спецсимволы');
+    }
+    
+    let strengthText = '';
+    let strengthClass = '';
+    
+    if (strength <= 2) {
+        strengthText = '❌ Слабый';
+        strengthClass = 'weak';
+    } else if (strength <= 4) {
+        strengthText = '⚠️ Средний';
+        strengthClass = 'medium';
+    } else {
+        strengthText = '✅ Сильный';
+        strengthClass = 'strong';
+    }
+    
+    strengthDiv.textContent = `${strengthText}${feedback.length > 0 ? ': ' + feedback.join(', ') : ''}`;
+    strengthDiv.className = `password-strength ${strengthClass}`;
+});
+
+// ========== Настройки ==========
+
+function openSettingsModal() {
+    document.getElementById('settings-modal').classList.remove('hidden');
+    loadBackupSettings();
+}
+
+function closeSettingsModal() {
+    document.getElementById('settings-modal').classList.add('hidden');
+}
+
+async function loadBackupSettings() {
+    try {
+        const response = await fetch('/api/backup-settings');
+        const data = await response.json();
+        
+        document.getElementById('backup-enabled').checked = data.enabled;
+        document.getElementById('backup-frequency').value = data.frequency;
+        document.getElementById('backup-keep-count').value = data.keep_count;
+        document.getElementById('backup-path').textContent = data.backup_path;
+        
+        if (data.last_backup) {
+            const date = new Date(data.last_backup);
+            document.getElementById('last-backup-time').textContent = date.toLocaleString('ru-RU');
+        } else {
+            document.getElementById('last-backup-time').textContent = 'Никогда';
+        }
+    } catch (error) {
+        console.error('Error loading backup settings:', error);
+    }
+}
+
+async function updateBackupSettings() {
+    const enabled = document.getElementById('backup-enabled').checked;
+    const frequency = document.getElementById('backup-frequency').value;
+    const keepCount = parseInt(document.getElementById('backup-keep-count').value);
+    
+    try {
+        const response = await fetch('/api/backup-settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enabled: enabled,
+                frequency: frequency,
+                keep_count: keepCount
+            })
+        });
+        
+        if (response.ok) {
+            showNotification('✅ Настройки сохранены');
+        } else {
+            showNotification('❌ Ошибка сохранения настроек');
+        }
+    } catch (error) {
+        console.error('Error updating backup settings:', error);
+        showNotification('❌ Ошибка соединения');
+    }
+}
+
+async function createManualBackup() {
+    showNotification('💾 Создание резервной копии...');
+    
+    try {
+        const response = await fetch('/api/backup', {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            showNotification('✅ Резервная копия создана');
+            loadBackupSettings(); // Обновить время последнего бэкапа
+        } else {
+            showNotification('❌ Ошибка создания копии');
+        }
+    } catch (error) {
+        console.error('Error creating backup:', error);
+        showNotification('❌ Ошибка соединения');
+    }
+}
+
+function showNotification(message) {
+    // Простое уведомление через alert (можно улучшить)
+    const notification = document.createElement('div');
+    notification.className = 'notification';
+    notification.textContent = message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #4CAF50;
+        color: white;
+        padding: 15px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        z-index: 10000;
+        animation: slideIn 0.3s ease;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}

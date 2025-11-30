@@ -21,7 +21,7 @@ class GOSTCrypto:
     
     # Константы
     SALT_LENGTH = 32  # 256 бит
-    NONCE_LENGTH = 16  # 128 бит для CTR режима
+    NONCE_LENGTH = 8  # 64 бит для CTR режима
     KEY_LENGTH = 32  # 256 бит для Кузнечика
     PBKDF2_ITERATIONS = 100000
     
@@ -202,6 +202,47 @@ class GOSTCrypto:
             return False, "Пароль слишком распространенный"
         
         return True, "Пароль соответствует требованиям"
+    
+    def generate_mek(self) -> bytes:
+        """
+        Генерация Master Encryption Key (MEK)
+        Это случайный ключ, который шифрует все данные
+        """
+        return secrets.token_bytes(self.KEY_LENGTH)
+    
+    def encrypt_mek(self, mek: bytes, master_password: str, salt: bytes) -> bytes:
+        """
+        Шифрование MEK ключом, полученным из мастер-пароля
+        """
+        # Деривация ключа из мастер-пароля
+        kek = self.derive_key_pbkdf2_gost(master_password, salt)
+        
+        # Генерация nonce для шифрования MEK
+        nonce = self.generate_nonce()
+        
+        # Шифрование MEK
+        cipher = gostcipher.new('kuznechik', kek, gostcipher.MODE_CTR, init_vect=nonce)
+        encrypted_mek = cipher.encrypt(mek)
+        
+        # Возвращаем nonce + encrypted_mek
+        return nonce + encrypted_mek
+    
+    def decrypt_mek(self, encrypted_mek_with_nonce: bytes, master_password: str, salt: bytes) -> bytes:
+        """
+        Расшифрование MEK с использованием мастер-пароля
+        """
+        # Деривация ключа из мастер-пароля
+        kek = self.derive_key_pbkdf2_gost(master_password, salt)
+        
+        # Извлечение nonce и зашифрованного MEK
+        nonce = encrypted_mek_with_nonce[:self.NONCE_LENGTH]
+        encrypted_mek = encrypted_mek_with_nonce[self.NONCE_LENGTH:]
+        
+        # Расшифрование MEK
+        cipher = gostcipher.new('kuznechik', kek, gostcipher.MODE_CTR, init_vect=nonce)
+        mek = cipher.decrypt(encrypted_mek)
+        
+        return mek
 
 
 # Singleton instance

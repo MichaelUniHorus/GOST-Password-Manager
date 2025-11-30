@@ -62,6 +62,7 @@
                 <h1>🔐 Менеджер паролей</h1>
                 <div class="header-actions">
                     <button id="add-entry-btn" class="btn btn-primary">+ Добавить запись</button>
+                    <button id="settings-btn" class="btn btn-secondary" onclick="openSettingsModal()">⚙️ Настройки</button>
                     <button id="audit-btn" class="btn btn-secondary">📊 Аудит</button>
                     <button id="logout-btn" class="btn btn-danger">Выход</button>
                 </div>
@@ -180,7 +181,7 @@
 
     <!-- Модальное окно аудита -->
     <div id="audit-modal" class="modal hidden">
-        <div class="modal-content modal-large">
+        <div class="modal-content">
             <div class="modal-header">
                 <h2>📊 Журнал аудита</h2>
                 <button class="modal-close" onclick="closeAuditModal()">&times;</button>
@@ -192,6 +193,104 @@
             
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeAuditModal()">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для смены мастер-пароля -->
+    <div id="change-password-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🔑 Смена мастер-пароля</h2>
+                <button class="modal-close" onclick="closeChangePasswordModal()">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    ⚠️ <strong>Важно:</strong> Убедитесь, что вы запомнили новый пароль. Восстановление невозможно!
+                </div>
+                
+                <div class="form-group">
+                    <label for="current-master-password">Текущий мастер-пароль</label>
+                    <input type="password" id="current-master-password" class="input" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="new-master-password">Новый мастер-пароль (минимум 15 символов)</label>
+                    <input type="password" id="new-master-password" class="input" required>
+                    <div id="new-password-strength" class="password-strength"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="confirm-master-password">Подтвердите новый пароль</label>
+                    <input type="password" id="confirm-master-password" class="input" required>
+                </div>
+                
+                <div id="change-password-error" class="error-message"></div>
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeChangePasswordModal()">Отмена</button>
+                <button class="btn btn-primary" onclick="submitChangeMasterPassword()">Сменить пароль</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для настроек -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>⚙️ Настройки</h2>
+                <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="settings-section">
+                    <h3>🔐 Безопасность</h3>
+                    <button class="btn btn-primary" onclick="openChangePasswordModal()">
+                        🔑 Сменить мастер-пароль
+                    </button>
+                </div>
+                
+                <hr>
+                
+                <div class="settings-section">
+                    <h3>💾 Автоматическое резервное копирование</h3>
+                    
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="backup-enabled" onchange="updateBackupSettings()">
+                            Включить автоматическое резервное копирование
+                        </label>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="backup-frequency">Частота</label>
+                        <select id="backup-frequency" class="input" onchange="updateBackupSettings()">
+                            <option value="daily">Ежедневно</option>
+                            <option value="weekly">Еженедельно</option>
+                            <option value="monthly">Ежемесячно</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="backup-keep-count">Количество копий для хранения</label>
+                        <input type="number" id="backup-keep-count" class="input" min="1" max="100" value="10" onchange="updateBackupSettings()">
+                    </div>
+                    
+                    <div class="backup-info">
+                        <p><strong>Последний бэкап:</strong> <span id="last-backup-time">Никогда</span></p>
+                        <p><strong>Путь к копиям:</strong> <code id="backup-path">backups/</code></p>
+                    </div>
+                    
+                    <button class="btn btn-secondary" onclick="createManualBackup()">
+                        💾 Создать резервную копию сейчас
+                    </button>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSettingsModal()">Закрыть</button>
             </div>
         </div>
     </div>
