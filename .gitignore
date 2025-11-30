@@ -1,0 +1,16 @@
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+*.log
+certs/
+instance/
+.DS_Store
