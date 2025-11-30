@@ -36,9 +36,15 @@ async function checkInitialization() {
     try {
         const result = await apiCall('/init');
         
-        if (result.initialized) {
+        // Если пользователь уже авторизован, показываем главный экран
+        if (result.authenticated) {
+            showScreen('main-screen');
+            await loadEntries();
+        } else if (result.initialized) {
+            // Если БД инициализирована, но пользователь не авторизован
             showScreen('login-screen');
         } else {
+            // Если БД не инициализирована
             showScreen('init-screen');
         }
     } catch (error) {

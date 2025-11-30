@@ -63,9 +63,11 @@ class PasswordEntry(Base):
     custom_fields_enc = Column(Text)  # Зашифрованные кастомные поля (JSON)
     
     # Метаданные (не шифруются)
+    category_id = Column(Integer)  # Ссылка на категорию
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_accessed = Column(DateTime)
+    last_password_change = Column(DateTime)  # Для отслеживания возраста пароля
     favorite = Column(Boolean, default=False)
     
     def __repr__(self):
@@ -141,6 +143,102 @@ class BackupSettings(Base):
     
     def __repr__(self):
         return f"<BackupSettings(enabled={self.enabled}, frequency={self.frequency})>"
+
+
+class Category(Base):
+    """
+    Таблица категорий для записей
+    """
+    __tablename__ = 'categories'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False, unique=True)
+    icon = Column(String(50))  # Emoji или название иконки
+    color = Column(String(7))  # HEX цвет, например #6366f1
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<Category(id={self.id}, name={self.name})>"
+
+
+class Tag(Base):
+    """
+    Таблица тегов для записей
+    """
+    __tablename__ = 'tags'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50), nullable=False, unique=True)
+    color = Column(String(7))  # HEX цвет
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<Tag(id={self.id}, name={self.name})>"
+
+
+class EntryTag(Base):
+    """
+    Связь многие-ко-многим между записями и тегами
+    """
+    __tablename__ = 'entry_tags'
+    
+    id = Column(Integer, primary_key=True)
+    entry_id = Column(Integer, nullable=False)
+    tag_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<EntryTag(entry_id={self.entry_id}, tag_id={self.tag_id})>"
+
+
+class EntryHistory(Base):
+    """
+    История изменений записей
+    """
+    __tablename__ = 'entry_history'
+    
+    id = Column(Integer, primary_key=True)
+    entry_id = Column(Integer, nullable=False)
+    action = Column(String(50), nullable=False)  # created, updated, password_changed, etc.
+    field_name = Column(String(100))  # Какое поле изменено
+    old_value_enc = Column(Text)  # Старое значение (зашифровано)
+    new_value_enc = Column(Text)  # Новое значение (зашифровано)
+    changed_at = Column(DateTime, default=datetime.utcnow)
+    ip_address = Column(String(45))
+    
+    def __repr__(self):
+        return f"<EntryHistory(id={self.id}, entry_id={self.entry_id}, action={self.action})>"
+
+
+class PasswordHealth(Base):
+    """
+    Статус безопасности паролей (утечки, слабые пароли)
+    """
+    __tablename__ = 'password_health'
+    
+    id = Column(Integer, primary_key=True)
+    entry_id = Column(Integer, nullable=False, unique=True)
+    
+    # Проверка утечек
+    is_breached = Column(Boolean, default=False)
+    breach_count = Column(Integer, default=0)  # Сколько раз найден в утечках
+    last_breach_check = Column(DateTime)
+    
+    # Оценка стойкости
+    strength_score = Column(Integer)  # 0-100
+    strength_level = Column(String(20))  # weak, medium, strong, very_strong
+    
+    # Возраст пароля
+    password_age_days = Column(Integer)  # Сколько дней с последней смены
+    
+    # Повторное использование
+    is_reused = Column(Boolean, default=False)
+    reuse_count = Column(Integer, default=0)
+    
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<PasswordHealth(entry_id={self.entry_id}, is_breached={self.is_breached})>"
 
 
 class Database:

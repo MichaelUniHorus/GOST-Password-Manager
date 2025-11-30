@@ -28,7 +28,7 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', secrets.token_hex(32))
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = True  # Только для HTTPS
 app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=int(os.getenv('SESSION_TIMEOUT', 300)))
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=10)  # Сессия на 10 минут
 
 CORS(app, supports_credentials=True)
 
@@ -120,13 +120,17 @@ def index():
 
 @app.route('/api/init', methods=['GET'])
 def check_init():
-    """Проверка инициализации мастер-пароля"""
+    """Проверка инициализации мастер-пароля и статуса сессии"""
     db_session = db.get_session()
     master = db_session.query(MasterPassword).first()
     db_session.close()
     
+    # Проверка активной сессии
+    is_authenticated = session.get('authenticated', False)
+    
     return jsonify({
-        'initialized': master is not None
+        'initialized': master is not None,
+        'authenticated': is_authenticated
     })
 
 
